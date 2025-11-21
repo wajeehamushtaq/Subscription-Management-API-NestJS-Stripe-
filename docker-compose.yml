@@ -1,0 +1,28 @@
+services:
+  api:
+    build: .
+    container_name: nest-api
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - MONGODB_URI=mongodb://mongo:27017/nest
+    ports:
+      - "3000:3000"
+    depends_on:
+      - mongo
+
+  mongo:
+    image: mongo:7
+    container_name: nest-mongo
+    restart: unless-stopped
+    environment:
+      - MONGO_INITDB_DATABASE=nest
+    volumes:
+      - mongo-data:/data/db
+    ports:
+      - "27017:27017"
+
+volumes:
+  mongo-data:
+

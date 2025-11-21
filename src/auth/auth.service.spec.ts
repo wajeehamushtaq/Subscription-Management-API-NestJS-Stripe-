@@ -1,0 +1,200 @@
+import { Test, TestingModule } from '@nestjs/testing';
+import { JwtService } from '@nestjs/jwt';
+import { getModelToken } from '@nestjs/mongoose';
+import { BadRequestException, UnauthorizedException } from '@nestjs/common';
+import * as bcrypt from 'bcryptjs';
+import { AuthService } from './auth.service';
+import { User, Role } from '@shared/schemas';
+import { StripeService } from '../stripe/stripe.service';
+
+describe('AuthService', () => {
+  let service: AuthService;
+  let userModel: any;
+  let roleModel: any;
+  let jwtService: JwtService;
+  let stripeService: StripeService;
+
+  const mockUserRole = {
+    _id: 'role123',
+    name: 'user',
+    status: 'active',
+  };
+
+  const mockUser = {
+    _id: 'user123',
+    email: 'test@example.com',
+    password: '$2a$10$hashedpassword',
+    full_name: 'Test User',
+    role: mockUserRole,
+    stripeCustomerId: 'cus_test123',
+    populate: jest.fn().mockResolvedValue({
+      _id: 'user123',
+      email: 'test@example.com',
+      full_name: 'Test User',
+      role: mockUserRole,
+    }),
+  };
+
+  beforeEach(async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        AuthService,
+        {
+          provide: getModelToken(User.name),
+          useValue: {
+            findOne: jest.fn(),
+            create: jest.fn(),
+          },
+        },
+        {
+          provide: getModelToken(Role.name),
+          useValue: {
+            findOne: jest.fn(),
+          },
+        },
+        {
+          provide: JwtService,
+          useValue: {
+            sign: jest.fn().mockReturnValue('mock-token'),
+          },
+        },
+        {
+          provide: StripeService,
+          useValue: {
+            createCustomer: jest.fn().mockResolvedValue({ id: 'cus_test123' }),
+          },
+        },
+      ],
+    }).compile();
+
+    service = module.get<AuthService>(AuthService);
+    userModel = module.get(getModelToken(User.name));
+    roleModel = module.get(getModelToken(Role.name));
+    jwtService = module.get<JwtService>(JwtService);
+    stripeService = module.get<StripeService>(StripeService);
+  });
+
+  describe('signUp', () => {
+    const signUpDto = {
+      email: 'newuser@example.com',
+      password: 'Password123!',
+      full_name: 'New User',
+    };
+
+    it('should create a new user successfully', async () => {
+      userModel.findOne.mockResolvedValue(null);
+      roleModel.findOne.mockResolvedValue(mockUserRole);
+      userModel.create.mockResolvedValue(mockUser);
+
+      const result = await service.signUp(signUpDto);
+
+      expect(result).toHaveProperty('accessToken');
+      expect(result).toHaveProperty('refreshToken');
+      expect(result.user.email).toBe(mockUser.email);
+      expect(stripeService.createCustomer).toHaveBeenCalledWith(
+        signUpDto.email,
+        signUpDto.full_name,
+      );
+    });
+
+    it('should throw BadRequestException if user already exists', async () => {
+      userModel.findOne.mockResolvedValue(mockUser);
+
+      await expect(service.signUp(signUpDto)).rejects.toThrow(
+        BadRequestException,
+      );
+      await expect(service.signUp(signUpDto)).rejects.toThrow(
+        'User already exists',
+      );
+    });
+
+    it('should throw BadRequestException if user role not found', async () => {
+      userModel.findOne.mockResolvedValue(null);
+      roleModel.findOne.mockResolvedValue(null);
+
+      await expect(service.signUp(signUpDto)).rejects.toThrow(
+        BadRequestException,
+      );
+      await expect(service.signUp(signUpDto)).rejects.toThrow(
+        'Default user role not found',
+      );
+    });
+
+    it('should hash password before saving', async () => {
+      userModel.findOne.mockResolvedValue(null);
+      roleModel.findOne.mockResolvedValue(mockUserRole);
+      userModel.create.mockResolvedValue(mockUser);
+
+      const bcryptHashSpy = jest.spyOn(bcrypt, 'hash');
+
+      await service.signUp(signUpDto);
+
+      expect(bcryptHashSpy).toHaveBeenCalledWith(signUpDto.password, 10);
+    });
+  });
+
+  describe('signIn', () => {
+    const signInDto = {
+      email: 'test@example.com',
+      password: 'Password123!',
+    };
+
+    it('should sign in user with valid credentials', async () => {
+      userModel.findOne.mockReturnValue({
+        populate: jest.fn().mockResolvedValue(mockUser),
+      });
+      jest.spyOn(bcrypt, 'compare').mockResolvedValue(true as never);
+
+      const result = await service.signIn(signInDto);
+
+      expect(result).toHaveProperty('accessToken');
+      expect(result).toHaveProperty('refreshToken');
+      expect(result.user.email).toBe(mockUser.email);
+    });
+
+    it('should throw UnauthorizedException if user not found', async () => {
+      userModel.findOne.mockReturnValue({
+        populate: jest.fn().mockResolvedValue(null),
+      });
+
+      await expect(service.signIn(signInDto)).rejects.toThrow(
+        UnauthorizedException,
+      );
+      await expect(service.signIn(signInDto)).rejects.toThrow(
+        'Invalid credentials',
+      );
+    });
+
+    it('should throw UnauthorizedException if password is invalid', async () => {
+      userModel.findOne.mockReturnValue({
+        populate: jest.fn().mockResolvedValue(mockUser),
+      });
+      jest.spyOn(bcrypt, 'compare').mockResolvedValue(false as never);
+
+      await expect(service.signIn(signInDto)).rejects.toThrow(
+        UnauthorizedException,
+      );
+      await expect(service.signIn(signInDto)).rejects.toThrow(
+        'Invalid credentials',
+      );
+    });
+  });
+
+  describe('generateTokenResponse', () => {
+    it('should generate access and refresh tokens', async () => {
+      userModel.findOne.mockReturnValue({
+        populate: jest.fn().mockResolvedValue(mockUser),
+      });
+      jest.spyOn(bcrypt, 'compare').mockResolvedValue(true as never);
+
+      const result = await service.signIn({
+        email: 'test@example.com',
+        password: 'Password123!',
+      });
+
+      expect(jwtService.sign).toHaveBeenCalledTimes(2);
+      expect(result.accessToken).toBe('mock-token');
+      expect(result.refreshToken).toBe('mock-token');
+    });
+  });
+});
