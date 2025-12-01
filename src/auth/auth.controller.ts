@@ -1,7 +1,7 @@
 import { Controller, Post, Body, HttpCode, HttpStatus } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
-import { SignUpDto, SignInDto, AuthResponseDto } from '@shared/dto';
+import { SignUpDto, SignInDto, AuthResponseDto, RefreshTokenDto } from '@shared/dto';
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -23,5 +23,14 @@ export class AuthController {
   @ApiResponse({ status: 401, description: 'Invalid credentials' })
   async signIn(@Body() dto: SignInDto): Promise<AuthResponseDto> {
     return this.authService.signIn(dto);
+  }
+
+  @Post('refresh')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Rotate tokens using a refresh token' })
+  @ApiResponse({ status: 200, description: 'New tokens issued', type: AuthResponseDto })
+  @ApiResponse({ status: 401, description: 'Invalid refresh token' })
+  async refresh(@Body() dto: RefreshTokenDto): Promise<AuthResponseDto> {
+    return this.authService.refreshTokens(dto);
   }
 }

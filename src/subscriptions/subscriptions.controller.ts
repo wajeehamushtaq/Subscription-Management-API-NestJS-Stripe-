@@ -19,6 +19,7 @@ import { CreateCheckoutDto } from '@shared/dto';
 import { InjectModel } from '@nestjs/mongoose';
 import { User } from '@shared/schemas';
 import { Model } from 'mongoose';
+import { PlansService } from '../plans/plans.service';
 
 @ApiTags('Subscriptions')
 @Controller('subscription')
@@ -28,6 +29,7 @@ export class SubscriptionsController {
   constructor(
     private subscriptionsService: SubscriptionsService,
     private stripeService: StripeService,
+    private plansService: PlansService,
     @InjectModel(User.name) private userModel: Model<User>,
   ) {}
 
@@ -54,6 +56,15 @@ export class SubscriptionsController {
     if (!user || !user.stripeCustomerId) {
       this.logger.error(`Checkout failed: User ${userId} or Stripe customer not found`);
       throw new NotFoundException('User or Stripe customer not found');
+    }
+
+    // Ensure requested plan/price is one we offer and active
+    const plan = await this.plansService.getPlanByPriceId(dto.priceId);
+    if (!plan) {
+      this.logger.warn(
+        `Checkout failed: Invalid or inactive price ${dto.priceId} for user ${userId}`,
+      );
+      throw new BadRequestException('Invalid or inactive plan');
     }
 
     // Create checkout session with backend callback URLs

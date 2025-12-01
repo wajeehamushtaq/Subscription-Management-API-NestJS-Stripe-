@@ -5,6 +5,7 @@ import { SubscriptionsController } from './subscriptions.controller';
 import { SubscriptionCallbacksController } from './subscription-callbacks.controller';
 import { Subscription, SubscriptionSchema, User, UserSchema } from '@shared/schemas';
 import { StripeModule } from '../stripe/stripe.module';
+import { PlansModule } from '../plans/plans.module';
 
 @Module({
   imports: [
@@ -13,6 +14,7 @@ import { StripeModule } from '../stripe/stripe.module';
       { name: User.name, schema: UserSchema },
     ]),
     forwardRef(() => StripeModule),
+    PlansModule,
   ],
   providers: [SubscriptionsService],
   controllers: [SubscriptionsController, SubscriptionCallbacksController],
