@@ -20,24 +20,14 @@ export interface PlanSummary {
 @Injectable()
 export class PlansService {
   private readonly logger = new Logger(PlansService.name);
-  private plansCache: PlanSummary[] = [];
-  private lastFetch = 0;
-  private readonly CACHE_TTL = 3600000; // 1 hour
 
   constructor(private stripeService: StripeService) {}
 
   async getPlans(): Promise<PlanSummary[]> {
-    const now = Date.now();
-
-    if (this.plansCache.length > 0 && now - this.lastFetch < this.CACHE_TTL) {
-      this.logger.log('Returning cached plans');
-      return this.plansCache;
-    }
-
     try {
       const products = await this.stripeService.listProducts();
 
-      this.plansCache = products.map((product) => {
+      return products.map((product) => {
         const defaultPrice = product.default_price as any;
         const amount = defaultPrice?.unit_amount || 0;
         const currency = defaultPrice?.currency || 'usd';
@@ -60,13 +50,9 @@ export class PlansService {
             : null,
         } as PlanSummary;
       });
-
-      this.lastFetch = now;
-      this.logger.log(`Fetched ${this.plansCache.length} plans from Stripe`);
-      return this.plansCache;
     } catch (error) {
       this.logger.error('Failed to fetch plans from Stripe', error.stack);
-      return this.plansCache;
+      throw error;
     }
   }
 
@@ -79,12 +65,6 @@ export class PlansService {
         plan.price.isActive,
     );
     return match || null;
-  }
-
-  clearCache(): void {
-    this.plansCache = [];
-    this.lastFetch = 0;
-    this.logger.log('Plans cache cleared');
   }
 
   private formatCurrency(amountInCents: number, currency: string): string {

@@ -14,7 +14,7 @@ import { PlansModule } from '../plans/plans.module';
       { name: User.name, schema: UserSchema },
     ]),
     forwardRef(() => StripeModule),
-    PlansModule,
+    forwardRef(() => PlansModule),
   ],
   providers: [SubscriptionsService],
   controllers: [SubscriptionsController, SubscriptionCallbacksController],
