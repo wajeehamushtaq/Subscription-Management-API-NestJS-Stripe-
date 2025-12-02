@@ -22,6 +22,9 @@ export class User extends Document {
   @Prop({ default: true })
   isActive: boolean;
 
+  @Prop({ default: null })
+  refreshTokenHash?: string;
+
   @Prop({ type: Date, default: Date.now })
   createdAt: Date;
 
@@ -37,6 +40,7 @@ UserSchema.set('toJSON', {
     delete ret.__v;
     delete ret._id;
     delete ret.password; // Never expose password in JSON responses
+    delete ret.refreshTokenHash;
     ret.id = doc._id.toString();
     return ret;
   },

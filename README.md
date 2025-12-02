@@ -26,7 +26,7 @@ A production-ready subscription management system built with NestJS, MongoDB, St
 - **Stripe Integration** - Subscription checkout and webhook handling
 - **MongoDB** persistence with Mongoose ODM
 - **Docker Deployment** with multi-stage builds
-- **Automatic Role Seeding** on startup
+- **Database Seeder Scripts** for roles and default admin setup
 - **Comprehensive Error Handling** with global exception filter
 - **Swagger API Documentation** at `/api/docs`
 - **Password Security** with bcrypt (10 salt rounds)
@@ -117,6 +117,12 @@ JWT_REFRESH_EXPIRATION=604800  # 7 days (in seconds)
 # ======================
 NODE_ENV=development
 PORT=3000
+
+# ======================
+# Default Admin Credentials (optional)
+# ======================
+DEFAULT_ADMIN_EMAIL=admin@example.com
+DEFAULT_ADMIN_PASSWORD=Admin@123
 ```
 
 ### Getting Your Stripe API Keys
@@ -225,6 +231,16 @@ View Swagger documentation:
 http://localhost:3000/api/docs
 ```
 
+### Database Seeding
+
+Run the database seeder whenever you bootstrap a new environment or need to ensure the default roles/admin account exist:
+
+```bash
+pnpm run db:seed
+```
+
+This script ensures the `admin` and `user` roles are present and that the default admin account is created (email/password taken from `DEFAULT_ADMIN_EMAIL` and `DEFAULT_ADMIN_PASSWORD` environment variables).
+
 ---
 
 ## 📚 API Documentation
@@ -247,12 +263,12 @@ Authorization: Bearer <your_access_token>
 
 ### Default Admin User
 
-The system automatically seeds an admin user on startup:
+Run `pnpm run db:seed` after configuring your environment to ensure the default admin account exists. By default the credentials are:
 
-| Field | Value |
-|-------|-------|
-| **Email** | `admin@example.com` |
-| **Password** | `Admin@123` |
+| Field | Value (configurable) |
+|-------|----------------------|
+| **Email** | `DEFAULT_ADMIN_EMAIL` (default `admin@example.com`) |
+| **Password** | `DEFAULT_ADMIN_PASSWORD` (default `Admin@123`) |
 | **Role** | `admin` |
 
 ---

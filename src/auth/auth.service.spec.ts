@@ -6,6 +6,7 @@ import * as bcrypt from 'bcryptjs';
 import { AuthService } from './auth.service';
 import { User, Role } from '@shared/schemas';
 import { StripeService } from '../stripe/stripe.service';
+import { ConfigService } from '@nestjs/config';
 
 describe('AuthService', () => {
   let service: AuthService;
@@ -13,6 +14,9 @@ describe('AuthService', () => {
   let roleModel: any;
   let jwtService: JwtService;
   let stripeService: StripeService;
+  let configService: ConfigService;
+  let bcryptCompareSpy: jest.SpyInstance;
+  let bcryptHashSpy: jest.SpyInstance;
 
   const mockUserRole = {
     _id: 'role123',
@@ -27,6 +31,7 @@ describe('AuthService', () => {
     full_name: 'Test User',
     role: mockUserRole,
     stripeCustomerId: 'cus_test123',
+    refreshTokenHash: 'hashedRefresh',
     populate: jest.fn().mockResolvedValue({
       _id: 'user123',
       email: 'test@example.com',
@@ -44,6 +49,8 @@ describe('AuthService', () => {
           useValue: {
             findOne: jest.fn(),
             create: jest.fn(),
+            updateOne: jest.fn().mockResolvedValue(undefined),
+            findById: jest.fn(),
           },
         },
         {
@@ -56,12 +63,30 @@ describe('AuthService', () => {
           provide: JwtService,
           useValue: {
             sign: jest.fn().mockReturnValue('mock-token'),
+            verify: jest.fn(),
           },
         },
         {
           provide: StripeService,
           useValue: {
             createCustomer: jest.fn().mockResolvedValue({ id: 'cus_test123' }),
+          },
+        },
+        {
+          provide: ConfigService,
+          useValue: {
+            get: jest.fn((key: string) => {
+              switch (key) {
+                case 'JWT_ACCESS_SECRET':
+                  return 'access-secret';
+                case 'JWT_REFRESH_SECRET':
+                  return 'refresh-secret';
+                case 'JWT_SECRET':
+                  return 'default-secret';
+                default:
+                  return null;
+              }
+            }),
           },
         },
       ],
@@ -72,6 +97,13 @@ describe('AuthService', () => {
     roleModel = module.get(getModelToken(Role.name));
     jwtService = module.get<JwtService>(JwtService);
     stripeService = module.get<StripeService>(StripeService);
+    configService = module.get<ConfigService>(ConfigService);
+    bcryptCompareSpy = jest.spyOn(bcrypt, 'compare');
+    bcryptHashSpy = jest.spyOn(bcrypt, 'hash');
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
   });
 
   describe('signUp', () => {
@@ -125,11 +157,10 @@ describe('AuthService', () => {
       roleModel.findOne.mockResolvedValue(mockUserRole);
       userModel.create.mockResolvedValue(mockUser);
 
-      const bcryptHashSpy = jest.spyOn(bcrypt, 'hash');
-
       await service.signUp(signUpDto);
 
       expect(bcryptHashSpy).toHaveBeenCalledWith(signUpDto.password, 10);
+      expect(userModel.updateOne).toHaveBeenCalled();
     });
   });
 
@@ -143,13 +174,14 @@ describe('AuthService', () => {
       userModel.findOne.mockReturnValue({
         populate: jest.fn().mockResolvedValue(mockUser),
       });
-      jest.spyOn(bcrypt, 'compare').mockResolvedValue(true as never);
+      bcryptCompareSpy.mockResolvedValue(true as never);
 
       const result = await service.signIn(signInDto);
 
       expect(result).toHaveProperty('accessToken');
       expect(result).toHaveProperty('refreshToken');
       expect(result.user.email).toBe(mockUser.email);
+      expect(userModel.updateOne).toHaveBeenCalled();
     });
 
     it('should throw UnauthorizedException if user not found', async () => {
@@ -169,7 +201,7 @@ describe('AuthService', () => {
       userModel.findOne.mockReturnValue({
         populate: jest.fn().mockResolvedValue(mockUser),
       });
-      jest.spyOn(bcrypt, 'compare').mockResolvedValue(false as never);
+      bcryptCompareSpy.mockResolvedValue(false as never);
 
       await expect(service.signIn(signInDto)).rejects.toThrow(
         UnauthorizedException,
@@ -185,7 +217,7 @@ describe('AuthService', () => {
       userModel.findOne.mockReturnValue({
         populate: jest.fn().mockResolvedValue(mockUser),
       });
-      jest.spyOn(bcrypt, 'compare').mockResolvedValue(true as never);
+      bcryptCompareSpy.mockResolvedValue(true as never);
 
       const result = await service.signIn({
         email: 'test@example.com',
@@ -195,6 +227,39 @@ describe('AuthService', () => {
       expect(jwtService.sign).toHaveBeenCalledTimes(2);
       expect(result.accessToken).toBe('mock-token');
       expect(result.refreshToken).toBe('mock-token');
+    });
+  });
+
+  describe('refreshTokens', () => {
+    it('should issue new tokens when refresh token is valid', async () => {
+      const refreshToken = 'valid-refresh';
+      jwtService.verify = jest.fn().mockReturnValue({ sub: mockUser._id });
+      userModel.findById.mockReturnValue({
+        populate: jest.fn().mockResolvedValue({
+          ...mockUser,
+          refreshTokenHash: 'stored-hash',
+        }),
+      });
+
+      bcryptCompareSpy.mockResolvedValue(true as never);
+
+      const result = await service.refreshTokens({ refreshToken });
+
+      expect(jwtService.verify).toHaveBeenCalledWith(refreshToken, {
+        secret: 'refresh-secret',
+      });
+      expect(result).toHaveProperty('accessToken');
+      expect(userModel.updateOne).toHaveBeenCalled();
+    });
+
+    it('should throw if refresh token invalid', async () => {
+      jwtService.verify = jest.fn(() => {
+        throw new Error('invalid');
+      });
+
+      await expect(
+        service.refreshTokens({ refreshToken: 'bad-token' }),
+      ).rejects.toThrow(UnauthorizedException);
     });
   });
 });

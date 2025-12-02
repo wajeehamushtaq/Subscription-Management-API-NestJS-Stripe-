@@ -1,9 +1,13 @@
+import 'dotenv/config';
 import * as request from 'supertest';
 
 describe('Auth & Subscriptions (e2e)', () => {
   const baseUrl = 'http://localhost:3000';
   let userToken: string;
   let adminToken: string;
+
+  const adminEmail = process.env.DEFAULT_ADMIN_EMAIL;
+  const adminPassword = process.env.DEFAULT_ADMIN_PASSWORD;
 
   describe('Authentication Flow', () => {
     const testUser = {
@@ -90,11 +94,17 @@ describe('Auth & Subscriptions (e2e)', () => {
 
     describe('Admin Login', () => {
       it('should sign in as admin', async () => {
+        if (!adminEmail || !adminPassword) {
+          throw new Error(
+            'DEFAULT_ADMIN_EMAIL and DEFAULT_ADMIN_PASSWORD must be set for e2e tests',
+          );
+        }
+
         const response = await request(baseUrl)
           .post('/auth/signin')
           .send({
-            email: 'admin@example.com',
-            password: 'Admin@123',
+            email: adminEmail,
+            password: adminPassword,
           })
           .expect(200);
 
